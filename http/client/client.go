@@ -1,4 +1,4 @@
-package assistant
+package client
 
 import (
 	"bytes"
@@ -7,21 +7,18 @@ import (
 	"io"
 	"log"
 	"net/http"
+
+	"github.com/mwazovzky/assistant"
 )
 
-type message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
 type openAiRequest struct {
-	Model    string    `json:"model"`
-	Messages []message `json:"messages"`
+	Model    string              `json:"model"`
+	Messages []assistant.Message `json:"messages"`
 }
 
 type choice struct {
-	Index   int     `json:"index"`
-	Message message `json:"message"`
+	Index   int               `json:"index"`
+	Message assistant.Message `json:"message"`
 }
 
 type usage struct {
@@ -40,42 +37,31 @@ type openAiResponse struct {
 	SystemFingerprint string   `json:"system_fingerprint"`
 }
 
-type openAiClient struct {
+type OpenAiClient struct {
 	url    string
 	apiKey string
 }
 
-const url = "https://api.openai.com/v1/chat/completions"
-
-func newOpenAiClient(apiKey string) *openAiClient {
-	return &openAiClient{url, apiKey}
+func NewOpenAiClient(url string, apiKey string) *OpenAiClient {
+	return &OpenAiClient{url, apiKey}
 }
 
-func (c *openAiClient) Request(model string, system string, msg string) (string, error) {
+func (c *OpenAiClient) Request(model string, messages []assistant.Message) (msg assistant.Message, err error) {
 	request := openAiRequest{
-		Model: model,
-		Messages: []message{
-			{
-				Role:    "system",
-				Content: system,
-			},
-			{
-				Role:    "user",
-				Content: msg,
-			},
-		},
+		Model:    model,
+		Messages: messages,
 	}
 
 	reqBody, err := json.Marshal(request)
 	if err != nil {
-		return "", err
+		return msg, err
 	}
 
 	reader := bytes.NewReader(reqBody)
 
 	httpReq, err := http.NewRequest(http.MethodPost, c.url, reader)
 	if err != nil {
-		return "", err
+		return msg, err
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
@@ -85,7 +71,7 @@ func (c *openAiClient) Request(model string, system string, msg string) (string,
 
 	httpRes, err := httpClient.Do(httpReq)
 	if err != nil {
-		return "", err
+		return msg, err
 	}
 
 	defer httpRes.Body.Close()
@@ -93,19 +79,21 @@ func (c *openAiClient) Request(model string, system string, msg string) (string,
 	if httpRes.StatusCode != http.StatusOK {
 		resBody, _ := io.ReadAll(httpRes.Body)
 		log.Println(string(resBody))
-		return "", fmt.Errorf("http request error, status %d", httpRes.StatusCode)
+		return msg, fmt.Errorf("http request error, status %d", httpRes.StatusCode)
 	}
 
 	resBody, err := io.ReadAll(httpRes.Body)
 	if err != nil {
-		return "", err
+		return msg, err
 	}
+
+	// log.Println(string(resBody))
 
 	var res openAiResponse
 	err = json.Unmarshal(resBody, &res)
 	if err != nil {
-		return "", err
+		return msg, err
 	}
 
-	return res.Choices[0].Message.Content, nil
+	return res.Choices[0].Message, nil
 }

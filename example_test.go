@@ -1,17 +1,4 @@
-# mwazovzky/assistant
-
-Package mwazovzky/assistant implements simple open ai api client.
-
-## Install
-
-```
-go get github.com/mwazovzky/assistant
-```
-
-## Basic Example
-
-```
-package main
+package assistant_test
 
 import (
 	"fmt"
@@ -21,6 +8,8 @@ import (
 	"github.com/mwazovzky/assistant"
 	"github.com/mwazovzky/assistant/http/client"
 )
+
+const url = "https://api.openai.com/v1/chat/completions"
 
 type ThreadRepository struct {
 	data map[string][]assistant.Message
@@ -55,7 +44,48 @@ func (tr *ThreadRepository) GetMessages(tid string) ([]assistant.Message, error)
 	return messages, nil
 }
 
-func main () {
+func ExampleAssistant_Ask() {
+	apiKey := os.Getenv("OPENAI_API_KEY")
+	client := client.NewOpenAiClient(url, apiKey)
+	tr := NewThreadRepository()
+
+	role := "You are assistant."
+	a := assistant.NewAssistant(role, client, tr)
+
+	msg, err := a.Ask("2+2=")
+	if err != nil {
+		fmt.Println(err)
+	}
+	fmt.Println(msg)
+	// Output: 2 + 2 = 4.
+}
+
+func ExampleAssistant_CreateThread() {
+	apiKey := os.Getenv("OPENAI_API_KEY")
+	client := client.NewOpenAiClient(url, apiKey)
+	tr := NewThreadRepository()
+
+	role := "You are assistant."
+	a := assistant.NewAssistant(role, client, tr)
+
+	tid := uuid.New().String()
+	a.CreateThread(tid)
+
+	messages, err := a.GetThread(tid)
+	if err != nil {
+		fmt.Println("expected no error, got", err)
+	}
+
+	len := len(messages)
+	if len != 1 {
+		fmt.Println("expected one message in thread, got", len)
+	}
+
+	fmt.Println(messages[0])
+	// Output: {system You are assistant.}
+}
+
+func ExampleAssistant_Post() {
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	client := client.NewOpenAiClient(url, apiKey)
 	tr := NewThreadRepository()
@@ -67,18 +97,9 @@ func main () {
 	a.CreateThread(tid)
 
 	msg, err := a.Post(tid, "2+2=")
+	if err != nil {
+		fmt.Println(err)
+	}
 	fmt.Println(msg)
 	// Output: 2 + 2 = 4.
 }
-```
-
-## Testing
-
-```
-go test
-go test client_test.go -v
-go test assistant_test.go -v
-go test -test.run=TestCreateThread -v
-go test example_test
-go test ./...
-```

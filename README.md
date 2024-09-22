@@ -1,3 +1,5 @@
+![CI](https://github.com/mwazovzky/assistant/actions/workflows/test.yml/badge.svg)
+
 # mwazovzky/assistant
 
 Package mwazovzky/assistant implements simple open ai api client.

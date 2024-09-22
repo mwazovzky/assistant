@@ -1,3 +1,5 @@
+![CI](https://github.com/mwazovzky/assistant/actions/workflows/go.yml/badge.svg)
+
 # mwazovzky/assistant
 
 Package mwazovzky/assistant implements simple open ai api client.

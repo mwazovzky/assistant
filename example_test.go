@@ -45,12 +45,13 @@ func (tr *ThreadRepository) GetMessages(tid string) ([]assistant.Message, error)
 }
 
 func ExampleAssistant_Ask() {
+	model := "gpt-4o-mini"
+	system := "You are assistant"
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	client := client.NewOpenAiClient(url, apiKey)
-	tr := NewThreadRepository()
+	threads := NewThreadRepository()
 
-	role := "You are assistant."
-	a := assistant.NewAssistant(role, client, tr)
+	a := assistant.NewAssistant(model, system, client, threads)
 
 	msg, err := a.Ask("2+2=")
 	if err != nil {
@@ -61,12 +62,13 @@ func ExampleAssistant_Ask() {
 }
 
 func ExampleAssistant_CreateThread() {
+	model := "gpt-4o-mini"
+	system := "You are assistant"
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	client := client.NewOpenAiClient(url, apiKey)
-	tr := NewThreadRepository()
+	threads := NewThreadRepository()
 
-	role := "You are assistant."
-	a := assistant.NewAssistant(role, client, tr)
+	a := assistant.NewAssistant(model, system, client, threads)
 
 	tid := uuid.New().String()
 	a.CreateThread(tid)
@@ -82,16 +84,17 @@ func ExampleAssistant_CreateThread() {
 	}
 
 	fmt.Println(messages[0])
-	// Output: {system You are assistant.}
+	// Output: {system You are assistant}
 }
 
 func ExampleAssistant_Post() {
+	model := "gpt-4o-mini"
+	system := "You are assistant"
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	client := client.NewOpenAiClient(url, apiKey)
-	tr := NewThreadRepository()
+	threads := NewThreadRepository()
 
-	role := "You are assistant."
-	a := assistant.NewAssistant(role, client, tr)
+	a := assistant.NewAssistant(model, system, client, threads)
 
 	tid := uuid.New().String()
 	a.CreateThread(tid)

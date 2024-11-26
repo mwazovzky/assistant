@@ -22,9 +22,9 @@ type Assistant struct {
 	threads TreadRepository
 }
 
-func NewAssistant(system string, client HttpClient, threads TreadRepository) *Assistant {
+func NewAssistant(model string, system string, client HttpClient, threads TreadRepository) *Assistant {
 	return &Assistant{
-		model:   "gpt-4o-mini",
+		model:   model,
 		system:  system,
 		client:  client,
 		threads: threads,

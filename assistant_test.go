@@ -34,11 +34,13 @@ func (t MockTreadRepository) AppendMessage(tid string, msg assistant.Message) er
 }
 
 func TestAsk(t *testing.T) {
-	question := "2+2="
+	model := "gpt-4o-mini"
+	system := "You are assistant"
 	client := MockClient{}
 	threads := MockTreadRepository{}
+	question := "2+2="
 
-	a := assistant.NewAssistant("You are assistant ", client, threads)
+	a := assistant.NewAssistant(model, system, client, threads)
 
 	t.Logf("When Assistant calls Ask(\"%s\")", question)
 	{
@@ -60,10 +62,13 @@ func TestAsk(t *testing.T) {
 }
 
 func TestCreateThread(t *testing.T) {
-	tid := "thread-one"
+	model := "gpt-4o-mini"
+	system := "You are assistant"
 	client := MockClient{}
 	threads := MockTreadRepository{}
-	a := assistant.NewAssistant("You are assistant ", client, threads)
+	tid := "thread-one"
+
+	a := assistant.NewAssistant(model, system, client, threads)
 
 	t.Logf("When Assistant calls CreateThread(\"thread-one\")")
 	a.CreateThread(tid)
@@ -91,10 +96,14 @@ func TestCreateThread(t *testing.T) {
 }
 
 func TestPost(t *testing.T) {
-	tid := "thread-one"
+	model := "gpt-4o-mini"
+	system := "You are assistant"
 	client := MockClient{}
 	threads := MockTreadRepository{}
-	a := assistant.NewAssistant("You are assistant ", client, threads)
+	tid := "thread-one"
+
+	a := assistant.NewAssistant(model, system, client, threads)
+
 	a.CreateThread(tid)
 
 	t.Logf("When Assistant calls Post()")

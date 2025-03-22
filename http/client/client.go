@@ -2,14 +2,18 @@ package client
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"log"
 	"net/http"
 
 	"github.com/mwazovzky/assistant"
 )
+
+// HttpDoer interface to abstract the Do method
+type HttpDoer interface {
+	Do(req *http.Request) (*http.Response, error)
+}
 
 type openAiRequest struct {
 	Model    string              `json:"model"`
@@ -28,72 +32,73 @@ type usage struct {
 }
 
 type openAiResponse struct {
-	ID                string   `json:"id"`
-	Object            string   `json:"object"`
-	Created           int64    `json:"created"`
-	Model             string   `json:"model"`
-	Choices           []choice `json:"choices"`
-	Usage             usage    `json:"usage"`
-	SystemFingerprint string   `json:"system_fingerprint"`
+	Choices []choice `json:"choices"`
+	Usage   usage    `json:"usage"`
 }
 
 type OpenAiClient struct {
-	url    string
-	apiKey string
+	url        string
+	apiKey     string
+	httpClient HttpDoer
 }
 
 func NewOpenAiClient(url string, apiKey string) *OpenAiClient {
-	return &OpenAiClient{url, apiKey}
+	return &OpenAiClient{
+		url:        url,
+		apiKey:     apiKey,
+		httpClient: &http.Client{},
+	}
 }
 
-func (c *OpenAiClient) Request(model string, messages []assistant.Message) (msg assistant.Message, err error) {
-	request := openAiRequest{
-		Model:    model,
-		Messages: messages,
-	}
+func (c *OpenAiClient) SetHttpClient(httpClient HttpDoer) {
+	c.httpClient = httpClient
+}
 
-	reqBody, err := json.Marshal(request)
+func (c *OpenAiClient) Request(model string, messages []assistant.Message) (assistant.Message, assistant.Usage, error) {
+	reqBody, err := json.Marshal(openAiRequest{Model: model, Messages: messages})
 	if err != nil {
-		return msg, err
+		return assistant.Message{}, assistant.Usage{}, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	reader := bytes.NewReader(reqBody)
-
-	httpReq, err := http.NewRequest(http.MethodPost, c.url, reader)
+	httpReq, err := c.createRequest(context.Background(), reqBody)
 	if err != nil {
-		return msg, err
+		return assistant.Message{}, assistant.Usage{}, err
 	}
 
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.apiKey))
-
-	httpClient := &http.Client{}
-
-	httpRes, err := httpClient.Do(httpReq)
+	httpRes, err := c.httpClient.Do(httpReq)
 	if err != nil {
-		return msg, err
+		return assistant.Message{}, assistant.Usage{}, fmt.Errorf("http request failed: %w", err)
 	}
-
 	defer httpRes.Body.Close()
 
 	if httpRes.StatusCode != http.StatusOK {
-		resBody, _ := io.ReadAll(httpRes.Body)
-		log.Println(string(resBody))
-		return msg, fmt.Errorf("http request error, status %d", httpRes.StatusCode)
+		return assistant.Message{}, assistant.Usage{}, fmt.Errorf("http request error, status %d", httpRes.StatusCode)
 	}
-
-	resBody, err := io.ReadAll(httpRes.Body)
-	if err != nil {
-		return msg, err
-	}
-
-	// log.Println(string(resBody))
 
 	var res openAiResponse
-	err = json.Unmarshal(resBody, &res)
-	if err != nil {
-		return msg, err
+	if err := json.NewDecoder(httpRes.Body).Decode(&res); err != nil {
+		return assistant.Message{}, assistant.Usage{}, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	return res.Choices[0].Message, nil
+	if len(res.Choices) == 0 {
+		return assistant.Message{}, assistant.Usage{}, fmt.Errorf("no choices returned in the response")
+	}
+
+	usage := assistant.Usage{
+		PromptTokens:     res.Usage.PromptTokens,
+		CompletionTokens: res.Usage.CompletionTokens,
+		TotalTokens:      res.Usage.TotalTokens,
+	}
+
+	return res.Choices[0].Message, usage, nil
+}
+
+func (c *OpenAiClient) createRequest(ctx context.Context, body []byte) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.apiKey))
+	return req, nil
 }

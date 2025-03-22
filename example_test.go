@@ -2,14 +2,20 @@ package assistant_test
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/google/uuid"
 	"github.com/mwazovzky/assistant"
-	"github.com/mwazovzky/assistant/http/client"
 )
 
-const url = "https://api.openai.com/v1/chat/completions"
+type MockHttpClient struct{}
+
+func (c MockHttpClient) Request(model string, msgs []assistant.Message) (msg assistant.Message, usage assistant.Usage, err error) {
+	return assistant.Message{Role: assistant.RoleAssistant, Content: "Mock response"}, assistant.Usage{
+		PromptTokens:     10,
+		CompletionTokens: 5,
+		TotalTokens:      15,
+	}, nil
+}
 
 type ThreadRepository struct {
 	data map[string][]assistant.Message
@@ -44,65 +50,55 @@ func (tr *ThreadRepository) GetMessages(tid string) ([]assistant.Message, error)
 	return messages, nil
 }
 
+func (tr *ThreadRepository) ThreadExists(tid string) (bool, error) {
+	_, ok := tr.data[tid]
+	return ok, nil
+}
+
 func ExampleAssistant_Ask() {
 	model := "gpt-4o-mini"
 	system := "You are assistant"
-	apiKey := os.Getenv("OPENAI_API_KEY")
-	client := client.NewOpenAiClient(url, apiKey)
-	threads := NewThreadRepository()
-
-	a := assistant.NewAssistant(model, system, client, threads)
-
-	msg, err := a.Ask("2+2=")
-	if err != nil {
-		fmt.Println(err)
-	}
-	fmt.Println(msg)
-	// Output: 2 + 2 = 4.
-}
-
-func ExampleAssistant_CreateThread() {
-	model := "gpt-4o-mini"
-	system := "You are assistant"
-	apiKey := os.Getenv("OPENAI_API_KEY")
-	client := client.NewOpenAiClient(url, apiKey)
+	client := MockHttpClient{} // Use the mock client
 	threads := NewThreadRepository()
 
 	a := assistant.NewAssistant(model, system, client, threads)
 
 	tid := uuid.New().String()
-	a.CreateThread(tid)
 
-	messages, err := a.GetThread(tid)
+	msg, _, err := a.Ask(tid, "2+2=")
+	if err != nil {
+		fmt.Println(err)
+	}
+	fmt.Println(msg)
+	// Output: Mock response
+}
+
+func ExampleAssistant_GetMessages() {
+	model := "gpt-4o-mini"
+	system := "You are assistant"
+	client := MockHttpClient{} // Use the mock client
+	threads := NewThreadRepository()
+
+	a := assistant.NewAssistant(model, system, client, threads)
+
+	tid := uuid.New().String()
+
+	// Ensure the thread contains at least one message
+	_ = threads.CreateThread(tid)
+	_ = threads.AppendMessage(tid, assistant.Message{Role: assistant.RoleSystem, Content: "You are assistant"})
+
+	messages, err := a.GetMessages(tid)
 	if err != nil {
 		fmt.Println("expected no error, got", err)
+		return
 	}
 
 	len := len(messages)
 	if len != 1 {
 		fmt.Println("expected one message in thread, got", len)
+		return
 	}
 
 	fmt.Println(messages[0])
 	// Output: {system You are assistant}
-}
-
-func ExampleAssistant_Post() {
-	model := "gpt-4o-mini"
-	system := "You are assistant"
-	apiKey := os.Getenv("OPENAI_API_KEY")
-	client := client.NewOpenAiClient(url, apiKey)
-	threads := NewThreadRepository()
-
-	a := assistant.NewAssistant(model, system, client, threads)
-
-	tid := uuid.New().String()
-	a.CreateThread(tid)
-
-	msg, err := a.Post(tid, "2+2=")
-	if err != nil {
-		fmt.Println(err)
-	}
-	fmt.Println(msg)
-	// Output: 2 + 2 = 4.
 }

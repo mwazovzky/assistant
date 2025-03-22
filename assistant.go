@@ -1,15 +1,28 @@
 package assistant
 
+const (
+	RoleSystem    = "system"
+	RoleUser      = "user"
+	RoleAssistant = "assistant"
+)
+
 type Message struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
 }
 
-type HttpClient interface {
-	Request(model string, msgs []Message) (msg Message, err error)
+type Usage struct {
+	PromptTokens     int
+	CompletionTokens int
+	TotalTokens      int
 }
 
-type TreadRepository interface {
+type HttpClient interface {
+	Request(model string, msgs []Message) (msg Message, usage Usage, err error)
+}
+
+type ThreadRepository interface {
+	ThreadExists(tid string) (bool, error)
 	CreateThread(tid string) error
 	AppendMessage(tid string, msg Message) error
 	GetMessages(tid string) ([]Message, error)
@@ -19,73 +32,67 @@ type Assistant struct {
 	model   string
 	system  string
 	client  HttpClient
-	threads TreadRepository
+	threads ThreadRepository
+	usage   Usage
 }
 
-func NewAssistant(model string, system string, client HttpClient, threads TreadRepository) *Assistant {
+func NewAssistant(model string, system string, client HttpClient, threads ThreadRepository) *Assistant {
 	return &Assistant{
 		model:   model,
 		system:  system,
 		client:  client,
 		threads: threads,
+		usage:   Usage{},
 	}
 }
 
-// Ask creates am OpenAi request without context
-func (a *Assistant) Ask(msg string) (string, error) {
-	messages := []Message{
-		{"system", a.system},
-		{"user", msg},
-	}
-
-	res, err := a.client.Request(a.model, messages)
-	if err != nil {
-		return "", err
-	}
-
-	return res.Content, nil
-}
-
-func (a *Assistant) GetThread(tid string) ([]Message, error) {
-	return a.threads.GetMessages(tid)
-}
-
-// CreateThread creates a thread of messages used as a conversation context
-func (a *Assistant) CreateThread(tid string) error {
-	err := a.threads.CreateThread(tid)
-	if err != nil {
-		return err
-	}
-
-	err = a.threads.AppendMessage(tid, Message{"system", a.system})
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// Post creates am OpenAi request with a thread of messages as a conversation context
-func (a *Assistant) Post(tid string, txt string) (string, error) {
-	err := a.threads.AppendMessage(tid, Message{"user", txt})
-	if err != nil {
-		return "", err
+func (a *Assistant) Ask(tid string, msg string) (string, Usage, error) {
+	if err := a.getThread(tid); err != nil {
+		return "", Usage{}, err
 	}
 
 	messages, err := a.threads.GetMessages(tid)
 	if err != nil {
-		return "", err
+		return "", Usage{}, err
 	}
 
-	msg, err := a.client.Request(a.model, messages)
+	response, usage, err := a.client.Request(a.model, messages)
 	if err != nil {
-		return "", err
+		return "", Usage{}, err
 	}
 
-	err = a.threads.AppendMessage(tid, msg)
+	a.usage = usage
+
+	if err := a.threads.AppendMessage(tid, response); err != nil {
+		return "", Usage{}, err
+	}
+
+	return response.Content, usage, nil
+}
+
+func (a *Assistant) GetMessages(tid string) ([]Message, error) {
+	return a.threads.GetMessages(tid)
+}
+
+func (a *Assistant) GetUsage() Usage {
+	return a.usage
+}
+
+func (a *Assistant) getThread(tid string) error {
+	exists, err := a.threads.ThreadExists(tid)
 	if err != nil {
-		return "", err
+		return err
+	}
+	if exists {
+		return nil
+	}
+	return a.createThread(tid)
+}
+
+func (a *Assistant) createThread(tid string) error {
+	if err := a.threads.CreateThread(tid); err != nil {
+		return err
 	}
 
-	return msg.Content, nil
+	return a.threads.AppendMessage(tid, Message{Role: RoleSystem, Content: a.system})
 }

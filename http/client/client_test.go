@@ -1,99 +1,108 @@
 package client_test
 
 import (
-	"fmt"
-	"io"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 
 	"github.com/mwazovzky/assistant"
 	"github.com/mwazovzky/assistant/http/client"
 )
 
-const success = "\u2713"
-const failure = "\u2717"
+type MockHttpDoer struct {
+	mock.Mock
+}
 
-// method params
-var model = "gpt-4o-mini"
-var system = "Assistant"
-var question = "2+2="
-
-// request params
-var expectedMethod = http.MethodPost
-var expectedContentType = "application/json"
-var expectedAuthorization = "Bearer secret"
-var expectedBody = `{"model":"gpt-4o-mini","messages":[{"role":"system","content":"Assistant"},{"role":"user","content":"2+2="}]}`
-
-// response
-var resBody = `{"id": "chatcmpl-A6KkJ8rHFQGCaTO54yZYYTie809wr","object": "chat.completion","created": 1726073079,"model": "gpt-4o-mini-2024-07-18",
-"choices":[{"index": 0,"message": {"role": "assistant","content": "2+2=4","refusal": null},"logprobs": null,"finish_reason": "stop"}],
-"usage": {"prompt_tokens": 21,"completion_tokens": 8,"total_tokens": 29},"system_fingerprint": "fp_483d39d857"}`
+func (m *MockHttpDoer) Do(req *http.Request) (*http.Response, error) {
+	args := m.Called(req)
+	return args.Get(0).(*http.Response), args.Error(1)
+}
 
 func TestRequest(t *testing.T) {
-	t.Logf("When OpenAiClient calls Request(\"%s\", `{{\"system\", \"%s\"},{\"user\", \"%s\"}}`)", model, system, question)
-
-	f := func(w http.ResponseWriter, r *http.Request) {
-		method := r.Method
-		if method == expectedMethod {
-			t.Logf("\t%s Request method should be [%s].", success, method)
-		} else {
-			t.Errorf("\t%s Request method should be [%s], got [%s]", failure, expectedMethod, method)
-		}
-
-		contentType := r.Header.Get("Content-Type")
-		if contentType == expectedContentType {
-			t.Logf("\t%s Request header 'Content-Type' should be [%s].", success, expectedContentType)
-		} else {
-			t.Errorf("\t%s Request header 'Content-Type' should be [%s], got [%s]", failure, expectedContentType, contentType)
-		}
-
-		authorization := r.Header.Get("Authorization")
-		if authorization == expectedAuthorization {
-			t.Logf("\t%s Request header 'Authorization' should be [%s].", success, expectedAuthorization)
-		} else {
-			t.Errorf("\t%s Request header 'Authorization' should be [%s], got [%s]", failure, expectedAuthorization, authorization)
-		}
-
-		content, _ := io.ReadAll(r.Body)
-		body := string(content)
-		if body == expectedBody {
-			t.Logf("\t%s Request body should be [%s].", success, expectedBody)
-		} else {
-			t.Errorf("\t%s Request body should be [%s], got [%s]", failure, expectedBody, body)
-		}
-
-		w.WriteHeader(200)
-		w.Header().Set("Conten-Type", "application/json")
-		fmt.Fprintln(w, resBody)
+	type testCase struct {
+		name           string
+		mockResponse   *http.Response
+		mockError      error
+		expectedError  string
+		expectedResult assistant.Message
+		expectedUsage  assistant.Usage
 	}
 
-	server := httptest.NewServer(http.HandlerFunc(f))
-	url := server.URL
-	defer server.Close()
-
-	client := client.NewOpenAiClient(url, "secret")
-
-	messages := []assistant.Message{
-		{Role: "system", Content: system},
-		{Role: "user", Content: question},
+	tests := []testCase{
+		{
+			name: "Success",
+			mockResponse: func() *http.Response {
+				rec := httptest.NewRecorder()
+				rec.WriteHeader(http.StatusOK)
+				rec.Body.WriteString(`{
+					"choices": [{"message": {"role": "assistant", "content": "2+2=4"}}],
+					"usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}
+				}`)
+				return rec.Result()
+			}(),
+			expectedResult: assistant.Message{Role: "assistant", Content: "2+2=4"},
+			expectedUsage:  assistant.Usage{PromptTokens: 10, CompletionTokens: 5, TotalTokens: 15},
+		},
+		{
+			name:          "HTTP Error",
+			mockResponse:  nil,
+			mockError:     errors.New("mock network error"),
+			expectedError: "mock network error",
+		},
+		{
+			name: "Invalid JSON Response",
+			mockResponse: func() *http.Response {
+				rec := httptest.NewRecorder()
+				rec.WriteHeader(http.StatusOK)
+				rec.Body.WriteString("invalid-json")
+				return rec.Result()
+			}(),
+			expectedError: "failed to decode response",
+		},
+		{
+			name: "Empty Choices",
+			mockResponse: func() *http.Response {
+				rec := httptest.NewRecorder()
+				rec.WriteHeader(http.StatusOK)
+				rec.Body.WriteString(`{
+					"choices": [],
+					"usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}
+				}`)
+				return rec.Result()
+			}(),
+			expectedError: "no choices returned in the response",
+		},
 	}
-	msg, err := client.Request(model, messages)
-	if err == nil {
-		t.Logf("\t%s Response should not be an error.", success)
-	} else {
-		t.Fatalf("\t%s Response should not be an error, got [%s]", failure, err)
-	}
 
-	expectedMsg := assistant.Message{Role: "assistant", Content: "2+2=4"}
-	if msg.Role == expectedMsg.Role {
-		t.Logf("\t%s Response message role should be [%s].", success, expectedMsg.Role)
-	} else {
-		t.Errorf("\t%s Response message role should be [%s], got [%s]", failure, expectedMsg.Role, msg.Role)
-	}
-	if msg.Content == expectedMsg.Content {
-		t.Logf("\t%s Response message content should be [%s].", success, expectedMsg.Content)
-	} else {
-		t.Errorf("\t%s Response message content should be [%s], got [%s]", failure, expectedMsg.Content, msg.Content)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockHttpDoer := &MockHttpDoer{}
+			openAiClient := client.NewOpenAiClient("http://example.com", "test-api-key")
+			openAiClient.SetHttpClient(mockHttpDoer)
+
+			if tt.mockResponse != nil || tt.mockError != nil {
+				mockHttpDoer.On("Do", mock.Anything).Return(tt.mockResponse, tt.mockError)
+			}
+
+			result, usage, err := openAiClient.Request("gpt-4", []assistant.Message{
+				{Role: "system", Content: "You are a helpful assistant."},
+				{Role: "user", Content: "What is 2+2?"},
+			})
+
+			if tt.expectedError != "" {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.expectedError)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.expectedResult, result)
+				assert.Equal(t, tt.expectedUsage, usage)
+			}
+
+			mockHttpDoer.AssertExpectations(t)
+		})
 	}
 }

@@ -85,3 +85,11 @@ go test -test.run=TestCreateThread -v
 go test example_test
 go test ./...
 ```
+
+## Test Coverage
+
+```
+go test ./... -coverprofile=coverage.out
+go tool cover -html=coverage.out -o coverage.html
+open coverage.html
+```

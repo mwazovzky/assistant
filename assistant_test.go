@@ -1,125 +1,250 @@
-package assistant_test
+package assistant
 
 import (
+	"errors"
 	"testing"
 
-	"github.com/mwazovzky/assistant"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 )
 
-const success = "\u2713"
-const failure = "\u2717"
-
-type MockClient struct{}
-
-func (c MockClient) Request(model string, msgs []assistant.Message) (msg assistant.Message, err error) {
-	return assistant.Message{Role: "assistant", Content: "2+2=4"}, nil
+// MockHttpClient using testify's mock
+type MockHttpClient struct {
+	mock.Mock
 }
 
-type MockTreadRepository struct{}
-
-func (t MockTreadRepository) CreateThread(tid string) error {
-	return nil
+func (c *MockHttpClient) Request(model string, msgs []Message) (Message, Usage, error) {
+	args := c.Called(model, msgs)
+	return args.Get(0).(Message), args.Get(1).(Usage), args.Error(2)
 }
 
-func (t MockTreadRepository) GetMessages(tid string) ([]assistant.Message, error) {
-	messages := []assistant.Message{
-		{"system", "You are assistant "},
-		{"user", "2+2="},
-	}
-	return messages, nil
+// MockThreadRepo using testify's mock
+type MockThreadRepo struct {
+	mock.Mock
 }
 
-func (t MockTreadRepository) AppendMessage(tid string, msg assistant.Message) error {
-	return nil
+func (r *MockThreadRepo) ThreadExists(tid string) (bool, error) {
+	args := r.Called(tid)
+	return args.Bool(0), args.Error(1)
 }
 
-func TestAsk(t *testing.T) {
-	model := "gpt-4o-mini"
-	system := "You are assistant"
-	client := MockClient{}
-	threads := MockTreadRepository{}
-	question := "2+2="
-
-	a := assistant.NewAssistant(model, system, client, threads)
-
-	t.Logf("When Assistant calls Ask(\"%s\")", question)
-	{
-		msg, err := a.Ask(question)
-		if err == nil {
-			t.Logf("\t%s It shoud not get error.", success)
-		} else {
-			t.Fatalf("\t%s It shoud not get error, got:%v", failure, err)
-		}
-
-		expectedMsg := "2+2=4"
-
-		if msg == expectedMsg {
-			t.Logf("\t%s It should get message with content [%s].", success, expectedMsg)
-		} else {
-			t.Errorf("\t%s It should get message with content [%s], got [%s]", failure, expectedMsg, msg)
-		}
-	}
+func (r *MockThreadRepo) CreateThread(tid string) error {
+	return r.Called(tid).Error(0)
 }
 
-func TestCreateThread(t *testing.T) {
-	model := "gpt-4o-mini"
-	system := "You are assistant"
-	client := MockClient{}
-	threads := MockTreadRepository{}
-	tid := "thread-one"
-
-	a := assistant.NewAssistant(model, system, client, threads)
-
-	t.Logf("When Assistant calls CreateThread(\"thread-one\")")
-	a.CreateThread(tid)
-
-	messages, err := a.GetThread(tid)
-
-	if err == nil {
-		t.Logf("\t%s It should not get err.", success)
-	} else {
-		t.Errorf("\t%s It should not get err, got [%s].", failure, err)
-	}
-
-	expectedMsg := assistant.Message{"system", "You are assistant "}
-	msg := messages[0]
-	if msg.Role == expectedMsg.Role {
-		t.Logf("\t%s It should have message with contentrole [%s].", success, expectedMsg.Role)
-	} else {
-		t.Errorf("\t%s It should have message with content role [%s], got [%s]", failure, expectedMsg.Role, msg.Role)
-	}
-	if msg.Content == expectedMsg.Content {
-		t.Logf("\t%s It should have message with content [%s].", success, expectedMsg.Content)
-	} else {
-		t.Errorf("\t%s It should have message with content [%s], got [%s]", failure, expectedMsg.Content, msg.Content)
-	}
+func (r *MockThreadRepo) AppendMessage(tid string, msg Message) error {
+	return r.Called(tid, msg).Error(0)
 }
 
-func TestPost(t *testing.T) {
-	model := "gpt-4o-mini"
-	system := "You are assistant"
-	client := MockClient{}
-	threads := MockTreadRepository{}
-	tid := "thread-one"
+func (r *MockThreadRepo) GetMessages(tid string) ([]Message, error) {
+	args := r.Called(tid)
+	return args.Get(0).([]Message), args.Error(1)
+}
 
-	a := assistant.NewAssistant(model, system, client, threads)
+func TestNewAssistant(t *testing.T) {
+	client := &MockHttpClient{}
+	threads := &MockThreadRepo{}
 
-	a.CreateThread(tid)
+	assistant := NewAssistant("gpt-4", "You are a helpful assistant.", client, threads)
 
-	t.Logf("When Assistant calls Post()")
-	msg, err := a.Post(tid, "2+2=")
+	assert.NotNil(t, assistant, "Expected a non-nil Assistant instance")
+}
 
-	if err == nil {
-		t.Logf("\t%s It should not get error.", success)
-	} else {
-		t.Errorf("\t%s It should not get error, got [%s].", failure, err)
-	}
+func TestAsk_Success(t *testing.T) {
+	tid := "thread-1"
+	question := "What is 2+2?"
+	expectedResponse := Message{Role: RoleAssistant, Content: "Mock response"}
+	expectedUsage := Usage{PromptTokens: 10, CompletionTokens: 5, TotalTokens: 15}
 
-	expectedMsg := "2+2=4"
+	client := &MockHttpClient{}
+	threads := &MockThreadRepo{}
+	threads.On("ThreadExists", tid).Return(true, nil)
+	threads.On("GetMessages", tid).Return([]Message{}, nil)
+	client.On("Request", "gpt-4", mock.Anything).Return(expectedResponse, expectedUsage, nil)
+	threads.On("AppendMessage", tid, mock.Anything).Return(nil)
 
-	if msg == expectedMsg {
-		t.Logf("\t%s It should get message with content [%s].", success, expectedMsg)
-	} else {
-		t.Errorf("\t%s It should get message with content [%s], got [%s]", failure, expectedMsg, msg)
-	}
+	assistant := NewAssistant("gpt-4", "You are a helpful assistant.", client, threads)
+	response, usage, err := assistant.Ask(tid, question)
+
+	assert.NoError(t, err)
+	assert.Equal(t, "Mock response", response)
+	assert.Equal(t, expectedUsage, usage)
+	threads.AssertExpectations(t)
+	client.AssertExpectations(t)
+}
+
+func TestAsk_Success_CreateThread(t *testing.T) {
+	tid := "thread-1"
+	question := "What is 2+2?"
+	expectedResponse := Message{Role: RoleAssistant, Content: "Mock response"}
+	expectedUsage := Usage{PromptTokens: 10, CompletionTokens: 5, TotalTokens: 15}
+
+	client := &MockHttpClient{}
+	threads := &MockThreadRepo{}
+	threads.On("ThreadExists", tid).Return(false, nil)
+	threads.On("CreateThread", tid).Return(nil)
+	threads.On("AppendMessage", tid, Message{Role: RoleSystem, Content: "You are a helpful assistant."}).Return(nil)
+	threads.On("GetMessages", tid).Return([]Message{}, nil)
+	client.On("Request", "gpt-4", mock.Anything).Return(expectedResponse, expectedUsage, nil)
+	threads.On("AppendMessage", tid, mock.Anything).Return(nil)
+
+	assistant := NewAssistant("gpt-4", "You are a helpful assistant.", client, threads)
+	response, usage, err := assistant.Ask(tid, question)
+
+	assert.NoError(t, err)
+	assert.Equal(t, "Mock response", response)
+	assert.Equal(t, expectedUsage, usage)
+	threads.AssertExpectations(t)
+	client.AssertExpectations(t)
+}
+
+func TestAsk_Error_GetThread(t *testing.T) {
+	tid := "error-thread"
+
+	client := &MockHttpClient{}
+	threads := &MockThreadRepo{}
+	threads.On("ThreadExists", tid).Return(false, errors.New("mock error"))
+
+	assistant := NewAssistant("gpt-4", "You are a helpful assistant.", client, threads)
+	_, _, err := assistant.Ask(tid, "What is 2+2?")
+
+	assert.Error(t, err)
+	assert.EqualError(t, err, "mock error")
+	threads.AssertExpectations(t)
+}
+
+func TestAsk_Error_CreateThread(t *testing.T) {
+	tid := "thread-1"
+	question := "What is 2+2?"
+
+	client := &MockHttpClient{}
+	threads := &MockThreadRepo{}
+	assistant := NewAssistant("gpt-4", "You are a helpful assistant.", client, threads)
+
+	threads.On("ThreadExists", tid).Return(false, nil)
+	threads.On("CreateThread", tid).Return(errors.New("mock error"))
+
+	_, _, err := assistant.Ask(tid, question)
+
+	assert.Error(t, err)
+	assert.EqualError(t, err, "mock error")
+	threads.AssertExpectations(t)
+}
+
+func TestAsk_Error_AppendSystemMessage(t *testing.T) {
+	tid := "thread-1"
+	question := "What is 2+2?"
+
+	client := &MockHttpClient{}
+	threads := &MockThreadRepo{}
+	threads.On("ThreadExists", tid).Return(false, nil)
+	threads.On("CreateThread", tid).Return(nil)
+	threads.On("AppendMessage", tid, mock.Anything).Return(errors.New("mock error"))
+
+	assistant := NewAssistant("gpt-4", "You are a helpful assistant.", client, threads)
+	_, _, err := assistant.Ask(tid, question)
+
+	assert.Error(t, err)
+	assert.EqualError(t, err, "mock error")
+
+	threads.AssertExpectations(t)
+}
+
+func TestAsk_Error_GetMessages(t *testing.T) {
+	tid := "thread-1"
+
+	client := &MockHttpClient{}
+	threads := &MockThreadRepo{}
+	threads.On("ThreadExists", tid).Return(true, nil)
+	threads.On("GetMessages", tid).Return([]Message{}, errors.New("mock error"))
+
+	assistant := NewAssistant("gpt-4", "You are a helpful assistant.", client, threads)
+	_, _, err := assistant.Ask(tid, "What is 2+2?")
+
+	assert.Error(t, err)
+	assert.EqualError(t, err, "mock error")
+	threads.AssertExpectations(t)
+}
+
+func TestAsk_Error_Request(t *testing.T) {
+	tid := "thread-1"
+	question := "What is 2+2?"
+
+	client := &MockHttpClient{}
+	threads := &MockThreadRepo{}
+	threads.On("ThreadExists", tid).Return(true, nil)
+	threads.On("GetMessages", tid).Return([]Message{}, nil)
+	client.On("Request", "gpt-4", mock.Anything).Return(Message{}, Usage{}, errors.New("mock error"))
+
+	assistant := NewAssistant("gpt-4", "You are a helpful assistant.", client, threads)
+	_, _, err := assistant.Ask(tid, question)
+
+	assert.Error(t, err)
+	assert.EqualError(t, err, "mock error")
+
+	threads.AssertExpectations(t)
+	client.AssertExpectations(t)
+}
+
+func TestAsk_Error_AppendMessage(t *testing.T) {
+	tid := "thread-1"
+	question := "What is 2+2?"
+
+	client := &MockHttpClient{}
+	threads := &MockThreadRepo{}
+	threads.On("ThreadExists", tid).Return(true, nil)
+	threads.On("GetMessages", tid).Return([]Message{{Role: RoleUser, Content: question}}, nil)
+	client.On("Request", "gpt-4", mock.Anything).Return(Message{}, Usage{}, nil)
+	threads.On("AppendMessage", tid, mock.Anything).Return(errors.New("mock error"))
+
+	assistant := NewAssistant("gpt-4", "You are a helpful assistant.", client, threads)
+	_, _, err := assistant.Ask(tid, "What is 2+2?")
+
+	assert.Error(t, err)
+	assert.EqualError(t, err, "mock error")
+	threads.AssertExpectations(t)
+}
+
+func TestGetMessages_Success(t *testing.T) {
+	tid := "thread-1"
+	expectedMessages := []Message{{Role: RoleUser, Content: "Hello!"}}
+
+	client := &MockHttpClient{}
+	threads := &MockThreadRepo{}
+	threads.On("GetMessages", tid).Return(expectedMessages, nil)
+
+	assistant := NewAssistant("gpt-4", "You are a helpful assistant.", client, threads)
+	messages, err := assistant.GetMessages(tid)
+
+	assert.NoError(t, err)
+	assert.Equal(t, expectedMessages, messages)
+	threads.AssertExpectations(t)
+}
+
+func TestGetMessages_Error(t *testing.T) {
+	tid := "error-thread"
+
+	client := &MockHttpClient{}
+	threads := &MockThreadRepo{}
+	threads.On("GetMessages", tid).Return([]Message{}, errors.New("mock error"))
+
+	assistant := NewAssistant("gpt-4", "You are a helpful assistant.", client, threads)
+	_, err := assistant.GetMessages(tid)
+
+	assert.Error(t, err)
+	assert.EqualError(t, err, "mock error")
+	threads.AssertExpectations(t)
+}
+
+func TestGetUsage(t *testing.T) {
+	client := &MockHttpClient{}
+	threads := &MockThreadRepo{}
+
+	assistant := NewAssistant("gpt-4", "You are a helpful assistant.", client, threads)
+	expectedUsage := Usage{PromptTokens: 10, CompletionTokens: 5, TotalTokens: 15}
+	assistant.usage = expectedUsage
+
+	usage := assistant.GetUsage()
+
+	assert.Equal(t, expectedUsage, usage, "GetUsage should return the correct usage statistics")
 }

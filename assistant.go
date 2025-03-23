@@ -46,28 +46,28 @@ func NewAssistant(model string, system string, client HttpClient, threads Thread
 	}
 }
 
-func (a *Assistant) Ask(tid string, msg string) (string, Usage, error) {
+func (a *Assistant) Ask(tid string, msg string) (string, error) {
 	if err := a.getThread(tid); err != nil {
-		return "", Usage{}, err
+		return "", err
 	}
 
 	messages, err := a.threads.GetMessages(tid)
 	if err != nil {
-		return "", Usage{}, err
+		return "", err
 	}
 
 	response, usage, err := a.client.Request(a.model, messages)
 	if err != nil {
-		return "", Usage{}, err
+		return "", err
 	}
 
 	a.usage = usage
 
 	if err := a.threads.AppendMessage(tid, response); err != nil {
-		return "", Usage{}, err
+		return "", err
 	}
 
-	return response.Content, usage, nil
+	return response.Content, nil
 }
 
 func (a *Assistant) GetMessages(tid string) ([]Message, error) {

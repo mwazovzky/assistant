@@ -65,7 +65,7 @@ func ExampleAssistant_Ask() {
 
 	tid := uuid.New().String()
 
-	msg, _, err := a.Ask(tid, "2+2=")
+	msg, err := a.Ask(tid, "2+2=")
 	if err != nil {
 		fmt.Println(err)
 	}

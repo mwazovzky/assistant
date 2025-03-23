@@ -64,11 +64,11 @@ func TestAsk_Success(t *testing.T) {
 	threads.On("AppendMessage", tid, mock.Anything).Return(nil)
 
 	assistant := NewAssistant("gpt-4", "You are a helpful assistant.", client, threads)
-	response, usage, err := assistant.Ask(tid, question)
+	response, err := assistant.Ask(tid, question)
 
 	assert.NoError(t, err)
 	assert.Equal(t, "Mock response", response)
-	assert.Equal(t, expectedUsage, usage)
+	assert.Equal(t, expectedUsage, assistant.usage)
 	threads.AssertExpectations(t)
 	client.AssertExpectations(t)
 }
@@ -89,11 +89,11 @@ func TestAsk_Success_CreateThread(t *testing.T) {
 	threads.On("AppendMessage", tid, mock.Anything).Return(nil)
 
 	assistant := NewAssistant("gpt-4", "You are a helpful assistant.", client, threads)
-	response, usage, err := assistant.Ask(tid, question)
+	response, err := assistant.Ask(tid, question)
 
 	assert.NoError(t, err)
 	assert.Equal(t, "Mock response", response)
-	assert.Equal(t, expectedUsage, usage)
+	assert.Equal(t, expectedUsage, assistant.usage)
 	threads.AssertExpectations(t)
 	client.AssertExpectations(t)
 }
@@ -106,7 +106,7 @@ func TestAsk_Error_GetThread(t *testing.T) {
 	threads.On("ThreadExists", tid).Return(false, errors.New("mock error"))
 
 	assistant := NewAssistant("gpt-4", "You are a helpful assistant.", client, threads)
-	_, _, err := assistant.Ask(tid, "What is 2+2?")
+	_, err := assistant.Ask(tid, "What is 2+2?")
 
 	assert.Error(t, err)
 	assert.EqualError(t, err, "mock error")
@@ -124,7 +124,7 @@ func TestAsk_Error_CreateThread(t *testing.T) {
 	threads.On("ThreadExists", tid).Return(false, nil)
 	threads.On("CreateThread", tid).Return(errors.New("mock error"))
 
-	_, _, err := assistant.Ask(tid, question)
+	_, err := assistant.Ask(tid, question)
 
 	assert.Error(t, err)
 	assert.EqualError(t, err, "mock error")
@@ -142,7 +142,7 @@ func TestAsk_Error_AppendSystemMessage(t *testing.T) {
 	threads.On("AppendMessage", tid, mock.Anything).Return(errors.New("mock error"))
 
 	assistant := NewAssistant("gpt-4", "You are a helpful assistant.", client, threads)
-	_, _, err := assistant.Ask(tid, question)
+	_, err := assistant.Ask(tid, question)
 
 	assert.Error(t, err)
 	assert.EqualError(t, err, "mock error")
@@ -159,7 +159,7 @@ func TestAsk_Error_GetMessages(t *testing.T) {
 	threads.On("GetMessages", tid).Return([]Message{}, errors.New("mock error"))
 
 	assistant := NewAssistant("gpt-4", "You are a helpful assistant.", client, threads)
-	_, _, err := assistant.Ask(tid, "What is 2+2?")
+	_, err := assistant.Ask(tid, "What is 2+2?")
 
 	assert.Error(t, err)
 	assert.EqualError(t, err, "mock error")
@@ -177,7 +177,7 @@ func TestAsk_Error_Request(t *testing.T) {
 	client.On("Request", "gpt-4", mock.Anything).Return(Message{}, Usage{}, errors.New("mock error"))
 
 	assistant := NewAssistant("gpt-4", "You are a helpful assistant.", client, threads)
-	_, _, err := assistant.Ask(tid, question)
+	_, err := assistant.Ask(tid, question)
 
 	assert.Error(t, err)
 	assert.EqualError(t, err, "mock error")
@@ -198,7 +198,7 @@ func TestAsk_Error_AppendMessage(t *testing.T) {
 	threads.On("AppendMessage", tid, mock.Anything).Return(errors.New("mock error"))
 
 	assistant := NewAssistant("gpt-4", "You are a helpful assistant.", client, threads)
-	_, _, err := assistant.Ask(tid, "What is 2+2?")
+	_, err := assistant.Ask(tid, "What is 2+2?")
 
 	assert.Error(t, err)
 	assert.EqualError(t, err, "mock error")

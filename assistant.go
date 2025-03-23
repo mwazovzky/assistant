@@ -51,6 +51,10 @@ func (a *Assistant) Ask(tid string, msg string) (string, error) {
 		return "", err
 	}
 
+	if err := a.threads.AppendMessage(tid, Message{Role: RoleUser, Content: msg}); err != nil {
+		return "", err
+	}
+
 	messages, err := a.threads.GetMessages(tid)
 	if err != nil {
 		return "", err

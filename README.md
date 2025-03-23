@@ -10,80 +10,18 @@ Package mwazovzky/assistant implements simple open ai api client.
 go get github.com/mwazovzky/assistant
 ```
 
-## Basic Example
+## Basic Usage Example
 
-```
-package main
+For basic usage examples, please refer to `example_test.go`.
 
-import (
-	"fmt"
-	"os"
-
-	"github.com/google/uuid"
-	"github.com/mwazovzky/assistant"
-	"github.com/mwazovzky/assistant/http/client"
-)
-
-type ThreadRepository struct {
-	data map[string][]assistant.Message
-}
-
-func NewThreadRepository() *ThreadRepository {
-	data := make(map[string][]assistant.Message)
-	return &ThreadRepository{data}
-}
-
-func (tr *ThreadRepository) CreateThread(tid string) error {
-	tr.data[tid] = []assistant.Message{}
-	return nil
-}
-
-func (tr *ThreadRepository) AppendMessage(tid string, msg assistant.Message) error {
-	messages, ok := tr.data[tid]
-	if !ok {
-		return fmt.Errorf("thread [%s] does not exist", tid)
-	}
-
-	tr.data[tid] = append(messages, msg)
-	return nil
-}
-
-func (tr *ThreadRepository) GetMessages(tid string) ([]assistant.Message, error) {
-	messages, ok := tr.data[tid]
-	if !ok {
-		return nil, fmt.Errorf("thread [%s] does not exist", tid)
-	}
-
-	return messages, nil
-}
-
-func main () {
-	model := "gpt-4o-mini"
-	system := "You are assistant"
-	apiKey := os.Getenv("OPENAI_API_KEY")
-	client := client.NewOpenAiClient(url, apiKey)
-	threads := NewThreadRepository()
-
-	a := assistant.NewAssistant(model, system, client, threads)
-
-	tid := uuid.New().String()
-	a.CreateThread(tid)
-
-	msg, err := a.Post(tid, "2+2=")
-	fmt.Println(msg)
-	// Output: 2 + 2 = 4.
-}
-```
-
-## Testing
+## Test
 
 ```
 go test
-go test client_test.go -v
-go test assistant_test.go -v
-go test -test.run=TestCreateThread -v
+go test -v ./...
+go test -v assistant_test.go
+go test -v -run TestCreateThread
 go test example_test
-go test ./...
 ```
 
 ## Test Coverage
@@ -92,4 +30,11 @@ go test ./...
 go test ./... -coverprofile=coverage.out
 go tool cover -html=coverage.out -o coverage.html
 open coverage.html
+```
+
+## Tag version
+
+```
+git tag -a v0.1.1 -m "Version 0.1.1: Revised the assistant.Ask() method signature to eliminate the return of usage statistics."
+git push origin v0.1.1
 ```

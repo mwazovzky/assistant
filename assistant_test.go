@@ -53,6 +53,7 @@ func TestNewAssistant(t *testing.T) {
 func TestAsk_Success(t *testing.T) {
 	tid := "thread-1"
 	question := "What is 2+2?"
+	expectedRequest := Message{Role: RoleUser, Content: "What is 2+2?"}
 	expectedResponse := Message{Role: RoleAssistant, Content: "Mock response"}
 	expectedUsage := Usage{PromptTokens: 10, CompletionTokens: 5, TotalTokens: 15}
 
@@ -60,8 +61,9 @@ func TestAsk_Success(t *testing.T) {
 	threads := &MockThreadRepo{}
 	threads.On("ThreadExists", tid).Return(true, nil)
 	threads.On("GetMessages", tid).Return([]Message{}, nil)
+	threads.On("AppendMessage", tid, expectedRequest).Return(nil)
 	client.On("Request", "gpt-4", mock.Anything).Return(expectedResponse, expectedUsage, nil)
-	threads.On("AppendMessage", tid, mock.Anything).Return(nil)
+	threads.On("AppendMessage", tid, expectedResponse).Return(nil)
 
 	assistant := NewAssistant("gpt-4", "You are a helpful assistant.", client, threads)
 	response, err := assistant.Ask(tid, question)
@@ -76,6 +78,7 @@ func TestAsk_Success(t *testing.T) {
 func TestAsk_Success_CreateThread(t *testing.T) {
 	tid := "thread-1"
 	question := "What is 2+2?"
+	expectedRequest := Message{Role: RoleUser, Content: "What is 2+2?"}
 	expectedResponse := Message{Role: RoleAssistant, Content: "Mock response"}
 	expectedUsage := Usage{PromptTokens: 10, CompletionTokens: 5, TotalTokens: 15}
 
@@ -85,8 +88,9 @@ func TestAsk_Success_CreateThread(t *testing.T) {
 	threads.On("CreateThread", tid).Return(nil)
 	threads.On("AppendMessage", tid, Message{Role: RoleSystem, Content: "You are a helpful assistant."}).Return(nil)
 	threads.On("GetMessages", tid).Return([]Message{}, nil)
+	threads.On("AppendMessage", tid, expectedRequest).Return(nil)
 	client.On("Request", "gpt-4", mock.Anything).Return(expectedResponse, expectedUsage, nil)
-	threads.On("AppendMessage", tid, mock.Anything).Return(nil)
+	threads.On("AppendMessage", tid, expectedResponse).Return(nil)
 
 	assistant := NewAssistant("gpt-4", "You are a helpful assistant.", client, threads)
 	response, err := assistant.Ask(tid, question)
@@ -134,12 +138,13 @@ func TestAsk_Error_CreateThread(t *testing.T) {
 func TestAsk_Error_AppendSystemMessage(t *testing.T) {
 	tid := "thread-1"
 	question := "What is 2+2?"
+	expectedPrompt := Message{Role: RoleSystem, Content: "You are a helpful assistant."}
 
 	client := &MockHttpClient{}
 	threads := &MockThreadRepo{}
 	threads.On("ThreadExists", tid).Return(false, nil)
 	threads.On("CreateThread", tid).Return(nil)
-	threads.On("AppendMessage", tid, mock.Anything).Return(errors.New("mock error"))
+	threads.On("AppendMessage", tid, expectedPrompt).Return(errors.New("mock error"))
 
 	assistant := NewAssistant("gpt-4", "You are a helpful assistant.", client, threads)
 	_, err := assistant.Ask(tid, question)
@@ -150,12 +155,31 @@ func TestAsk_Error_AppendSystemMessage(t *testing.T) {
 	threads.AssertExpectations(t)
 }
 
-func TestAsk_Error_GetMessages(t *testing.T) {
+func TestAsk_Error_AppendRequestMessage(t *testing.T) {
 	tid := "thread-1"
+	expectedRequest := Message{Role: RoleUser, Content: "What is 2+2?"}
 
 	client := &MockHttpClient{}
 	threads := &MockThreadRepo{}
 	threads.On("ThreadExists", tid).Return(true, nil)
+	threads.On("AppendMessage", tid, expectedRequest).Return(errors.New("mock error"))
+
+	assistant := NewAssistant("gpt-4", "You are a helpful assistant.", client, threads)
+	_, err := assistant.Ask(tid, "What is 2+2?")
+
+	assert.Error(t, err)
+	assert.EqualError(t, err, "mock error")
+	threads.AssertExpectations(t)
+}
+
+func TestAsk_Error_GetMessages(t *testing.T) {
+	tid := "thread-1"
+	expectedRequest := Message{Role: RoleUser, Content: "What is 2+2?"}
+
+	client := &MockHttpClient{}
+	threads := &MockThreadRepo{}
+	threads.On("ThreadExists", tid).Return(true, nil)
+	threads.On("AppendMessage", tid, expectedRequest).Return(nil)
 	threads.On("GetMessages", tid).Return([]Message{}, errors.New("mock error"))
 
 	assistant := NewAssistant("gpt-4", "You are a helpful assistant.", client, threads)
@@ -169,11 +193,13 @@ func TestAsk_Error_GetMessages(t *testing.T) {
 func TestAsk_Error_Request(t *testing.T) {
 	tid := "thread-1"
 	question := "What is 2+2?"
+	expectedRequest := Message{Role: RoleUser, Content: "What is 2+2?"}
 
 	client := &MockHttpClient{}
 	threads := &MockThreadRepo{}
 	threads.On("ThreadExists", tid).Return(true, nil)
 	threads.On("GetMessages", tid).Return([]Message{}, nil)
+	threads.On("AppendMessage", tid, expectedRequest).Return(nil)
 	client.On("Request", "gpt-4", mock.Anything).Return(Message{}, Usage{}, errors.New("mock error"))
 
 	assistant := NewAssistant("gpt-4", "You are a helpful assistant.", client, threads)
@@ -186,16 +212,19 @@ func TestAsk_Error_Request(t *testing.T) {
 	client.AssertExpectations(t)
 }
 
-func TestAsk_Error_AppendMessage(t *testing.T) {
+func TestAsk_Error_AppendResponseMessage(t *testing.T) {
 	tid := "thread-1"
 	question := "What is 2+2?"
+	expectedRequest := Message{Role: RoleUser, Content: "What is 2+2?"}
+	expectedResponse := Message{Role: RoleAssistant, Content: "Mock response"}
 
 	client := &MockHttpClient{}
 	threads := &MockThreadRepo{}
 	threads.On("ThreadExists", tid).Return(true, nil)
 	threads.On("GetMessages", tid).Return([]Message{{Role: RoleUser, Content: question}}, nil)
-	client.On("Request", "gpt-4", mock.Anything).Return(Message{}, Usage{}, nil)
-	threads.On("AppendMessage", tid, mock.Anything).Return(errors.New("mock error"))
+	threads.On("AppendMessage", tid, expectedRequest).Return(nil)
+	client.On("Request", "gpt-4", mock.Anything).Return(expectedResponse, Usage{}, nil)
+	threads.On("AppendMessage", tid, expectedResponse).Return(errors.New("mock error"))
 
 	assistant := NewAssistant("gpt-4", "You are a helpful assistant.", client, threads)
 	_, err := assistant.Ask(tid, "What is 2+2?")
